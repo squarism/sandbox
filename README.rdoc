@@ -1,6 +1,7 @@
+== Sandbox
 A play area.  But complex enough that I need to version things.  Should contain working examples and concepts.  Promted from local chaos examples directory of dev boxes.
 
-== Explanation
+== Explanation of what's in here
 
 === monty_hall.rb
 From post: http://squarism.com/2010/12/13/monty-hall-problem-in-ruby/.  An exercise in statistics/simple algorithm.  Uses basic OO and no gems.  Simulates a game show and tracks the results of the Monty Hall problem.  More information about the Monty Hall problem on wikipedia and youtube.
