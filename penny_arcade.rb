@@ -183,10 +183,13 @@ class Scraper
     # clear screen
     print %x{clear}
     
-    r = self.running ? "[running]" : "[stopped]"
+    r = self.running ? "Running" : "Stopped"
     
     # scraper stats
-    puts "Scraper#{r} queue:#{self.url_queue.length} scraped:#{self.scraped_count}"
+    printf("%-2s %2s", "Scraper queue: ", self.url_queue.length)
+    print " || Scraper:#{r} || "
+    printf("%-3s %3s", "Pages Scraped This Session: ", self.scraped_count)
+    print "\n"
   end
   
   def start_saver(semaphore)
@@ -211,15 +214,23 @@ class Scraper
 
       # TODO: sometimes the thread dies!
       if !self.saver_thread.alive?
-        puts "Starting new thread ..."
-        sleep 10
         self.saver_thread = Thread.new { self.saver.run }
-        puts "Started new thread ..."
-        sleep 20
+        death_string = %q{ 
+         _______ _                        _   _____  _          _ _ 
+        |__   __| |                      | | |  __ \(_)        | | |
+           | |  | |__  _ __ ___  __ _  __| | | |  | |_  ___  __| | |
+           | |  | '_ \| '__/ _ \/ _` |/ _` | | |  | | |/ _ \/ _` | |
+           | |  | | | | | |  __/ (_| | (_| | | |__| | |  __/ (_| |_|
+           |_|  |_| |_|_|  \___|\__,_|\__,_| |_____/|_|\___|\__,_(_)
+           It's ok, this happens.  It'll start again soon.
+        }
+        puts death_string
+        sleep 5
+        
       end
       
       # need to sleep a little bit to keep terminal from freaking out
-      sleep 0.01
+      sleep Random.new.rand(0.01..0.1).round(3)
     end
     
   end
@@ -240,7 +251,7 @@ class Saver
   attr_accessor :semaphore
   
   def initialize
-    self.local_dir = "#{ENV['HOME']}/Desktop/PA"
+    self.local_dir = "#{ENV['HOME']}/Pictures/PA"
     
     if !File.exists? local_dir
       require 'fileutils'
@@ -409,14 +420,21 @@ class Saver
        end
        
        # need to sleep a little bit to keep terminal from freaking out
-       sleep 0.05
+       sleep Random.new.rand(0.02..0.2).round(3)
      end
    end
    
    def stats
-     r = self.running ? "[running]" : "[stopped]"
-     puts "Saver#{r} queue:#{self.url_queue.length} saved:#{self.saved_count}"
-     puts "Last: #{self.last_saved}"
+     r = self.running ? "Running" : "Stopped"
+     printf("%-4s %4s", "Saver queue: ", self.url_queue.length)
+     print " || Saver:#{r}   || "
+     printf("%-3s %3s", "Saved Images This Session: ", self.saved_count)
+     print "\n"
+     
+     
+     #puts "  Saver queue: #{self.url_queue.length} || Saver:#{r}   ||  Saved Images This Session: #{self.saved_count}"
+     puts "Saving to: #{self.local_dir}"
+     puts "On: #{self.last_saved}"
    end
   
 end
