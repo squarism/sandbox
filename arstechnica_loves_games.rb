@@ -97,25 +97,7 @@ class Scraper
     end
     reviews.compact!
   end 
-  
-  
-  # get rid of non-reviews
-  def title_unique
-    uniques = []
-    self.reviews.each_with_index do |r, i|
-      titles = uniques.collect {|e| e[:title]}
-      
-      if !titles.include? r[:title]
-        uniques.push r
-      else
-        reviews[i] = nil
-      end
-    end
-
-    reviews.compact!
-
-  end
-  
+    
 end
 
 # will get a 503 if you hammer google, so we'll cache to file
@@ -139,8 +121,9 @@ s.reviews.uniq!
 s.reviews.sort_by! { |r| r[:title] }
 
 # unique based on titles, gets rid of mulipage hits
-s.title_unique
-  
+# avoid ruby bug #4346 (uniq! after sort_by!)
+s.reviews = s.reviews.uniq { |e| e[:title] }
+
 
 puts "after trim: #{s.reviews.size}"
 
