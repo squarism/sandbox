@@ -10,7 +10,7 @@ require 'uri'
 require 'date'
 require 'yaml'
 require 'base64'
-require 'msgpack'
+
 
 class Scraper
   attr_accessor :number_of_results
@@ -18,6 +18,8 @@ class Scraper
   attr_accessor :starting_url   # static google results URL
   attr_accessor :page           # google result page iterator number
   attr_accessor :test_mode      # uses cache .yaml file for testing instead of hitting google
+  attr_accessor :limit
+  attr_accessor :limit_count
   
   def initialize
     self.number_of_results = 0
@@ -25,7 +27,21 @@ class Scraper
     self.reviews = Array.new
     self.starting_url = "http://www.google.com/search?hl=en&safe=off&biw=1310&bih=1064"
     self.starting_url << "&q=site%3Aarstechnica.com+arstechnica.com+%22verdict%3A+buy%22&aq=f&start="
+
+    # the below is for test/dev
     self.test_mode = true
+    self.limit = -1
+    self.limit_count = 0
+    
+    if !self.test_mode
+      begin
+        puts "Cleared cache file."
+        File.delete(File.dirname(__FILE__) + "/ars_dump.yaml")
+      rescue Errno::ENOENT
+        puts "Cache file already gone."
+      end
+    end
+    
   end
   
   def scrape
@@ -45,6 +61,8 @@ class Scraper
     
     # get the google results for the current page
     @doc = Nokogiri::HTML(open(self.search_url))
+    
+    review_buffer = Array.new
     
     # parse the result
     @doc.css('li.g').each do |result|
@@ -71,6 +89,7 @@ class Scraper
       # base64 fail
       @encoded_doc = Base64::encode64(@nokogiri_doc.to_s)
       self.reviews << { :title => @title, :link => @link, :date => @date, :doc => @encoded_doc }
+      review_buffer << { :title => @title, :link => @link, :date => @date, :doc => @encoded_doc }
       
       #@msg = @nokogiri_doc.to_s.to_msgpack
       #reviews << { :title => @title, :link => @link, :date => @date, :doc => @msg }
@@ -81,22 +100,36 @@ class Scraper
     # if we run out of google results size will be less than 10 (full page of links)
     if @doc.css('li.g').size >= 10
       self.page += 1
-      puts "Sleeping before page: #{self.page} ..."
+      puts "===> Sleeping before page: #{self.page}.  ZZzzz..."
+      
+      # flush to YAML file
+      File.open(File.dirname(__FILE__) + "/ars_dump.yaml", "a") do |file|
+        puts "review_buffer: #{review_buffer.size} || reviews: #{self.reviews.size} || page_count: #{self.limit_count}"
+        review_buffer.each do |review|
+          file.puts YAML::dump(review)
+        end
+      end
+      
       
       # sleep to avoid hammering
-      #sleep 3
+      sleep 3
       
-      #scrape
+      # set limit to -1 to scrape all google results, all pages
+      if self.limit == -1 || self.limit_count < self.limit - 1
+        self.limit_count += 1
+        scrape
+      end
+      
     end
     
     # will get a 503 if you hammer google, so we'll cache to file
     # this won't fire because of the return near top
-    File.open(File.dirname(__FILE__) + "/ars_dump.yaml", "w") do |file|
-      self.reviews.each do |hash|
-        file.puts YAML::dump(hash)
+    File.open(File.dirname(__FILE__) + "/ars_dump.yaml", "a") do |file|
+      review_buffer.each do |review|
+        file.puts YAML::dump(review)
       end
     end
-    
+        
   end
   
   def search_url
@@ -125,15 +158,9 @@ class Scraper
 end
 
 
-def deserialize(element)
-  # zstream = Zlib::Inflate.new
-  # buf = zstream.inflate(element[:doc])
-  # deserialized_doc = Nokogiri::HTML.parse(buf)
 
-  
-  deserialized_doc = Nokogiri::HTML.parse(Base64::decode64(element[:doc]))
-end
-
+####################################################
+# MAIN
 
 
 s = Scraper.new
@@ -147,6 +174,7 @@ puts "before trim: #{s.reviews.size}"
 s.trim(:title, "OpenForum")
 s.trim(:link, "\/civis\/")
 s.trim(:link, "\/phpbb\/")
+s.trim(:link, "\/gadgets/")
 
 # for some reason getting an author bio link in there
 s.trim(:link, "\/author\/")
@@ -160,16 +188,8 @@ s.reviews.sort_by! { |r| r[:title] }
 # unique based on titles, gets rid of mulipage hits
 # avoid ruby bug #4346 (uniq! after sort_by!)
 s.reviews = s.reviews.uniq { |e| e[:title] }
-
-
 puts "after trim: #{s.reviews.size}"
 
-# test unique title trim
-# s.reviews.each do |r|
-#   if r[:title][/Reach/]
-#     puts r
-#   end
-# end
 
 review_style_1 = ""
 s.reviews.each do |r|
@@ -177,53 +197,61 @@ s.reviews.each do |r|
     review_style_1 = r
   end
 end
-#puts review_style_1[:link]
-puts review_style_1.size
-
-# gzip
-#doc = deserialize(review_style_1)
-
-# base64
-
-#puts doc
-
-
-#puts unpacked_doc = Nokogiri::HTML.parse(MessagePack.unpack review_style_1[:doc])
-
-
-#puts doc.css('.news-item-figure') #.css('th') #[1].text
-
 
 s.reviews.each do |r|
   doc = Nokogiri::HTML.parse(Base64::decode64(r[:doc]))
   #doc = Nokogiri::HTML::parse r[:doc]
+  puts "-" * 50
   puts r[:link]
-  
-  # style -1
-  #if !doc.css('.news-item-figure').css('th')[1].nil?
-  #  print "STYLE 1: "
-  #  puts doc.css('.news-item-figure').css('th')[1].text
-  #end
-    
+      
   # style 1 (table with heading, bleh)
   if !doc.css('tbody').css('th')[1].nil?
-    print "STYLE 1: "
-    puts doc.css('tbody').css('th')[1].text
+    print "STYLE 2: "
+    puts doc.css('tbody').css('th')[1].text.strip
   end
   
   # style 2 (nice game-info div)
   if !doc.css('.game-info').css('h3')[0].nil?
-    print "STYLE 2: "
-    puts doc.css('.game-info').css('h3')[0].text
+    print "STYLE 3: "
+    puts doc.css('.game-info').css('h3')[0].text.strip
   end
   
   # style 3 (nothing really, title detection)
   # http://arstechnica.com/gaming/news/2007/02/7048.ars
   # Game Review: WiiPlay (Wii)
   if doc.css('title').text[/^Game Review:/]
-    print "STYLE 3: "
+    print "STYLE 1: "
     puts doc.css('title').text.split(":")[1].strip
   end
+  
+  # style 4 (even less, just some <em> text)
+  # http://arstechnica.com/gaming/reviews/2010/04/plain-sighton-the-pc-low-gravity-suicidal-robot-ninjas.ars
+  if doc.xpath('//div[@id="story"]/h2[@class="title"]').css('em').text.size > 0
+    print "STYLE 4: "
+    puts doc.xpath('//div[@id="story"]/h2[@class="title"]').css('em').text.strip
+  end
+  
+  # style 5 (absolutely nothing useful)
+  # Try to detect proper nouns after the word reviews
+  # http://arstechnica.com/gaming/reviews/2010/03/retro-but-approachable-ars-review-mega-man-10.ars
+  if doc.xpath('//meta[@name = "title"]').attr("content").to_s.size > 0
+
+    title = doc.xpath('//meta[@name = "title"]').attr("content").to_s
+    game_title = title[/reviews(.*)/]
+    if !game_title.nil?
+      title_array = game_title.split(" ")
+    
+      # get rid of any words that start with lower case, hopefully a title is left
+      title_array.reject! { |e| e[/^[a-z]/] }
+      game_title = title_array.join(" ")
+    
+      print "STYLE 5: "
+      puts game_title
+    end
+  end
+  
+  # USEFUL: find all meta data tags with title attributes.
+  # doc.xpath('//meta[@name = "title"]').attr("content").to_s
   
 end
 
