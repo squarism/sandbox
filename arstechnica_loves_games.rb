@@ -250,8 +250,29 @@ s.reviews.each do |r|
     end
   end
   
-  # USEFUL: find all meta data tags with title attributes.
-  # doc.xpath('//meta[@name = "title"]').attr("content").to_s
+  # style 6: grab title from text like Review: Lego Batman is saved by the co-op
+  # http://arstechnica.com/gaming/news/2008/09/lego-batman-saved-by-the-co-op.ars
+  if !doc.xpath('//meta[@property="og:title"]').empty?
+    title = doc.xpath('//meta[@property="og:title"]').attr("content").to_s
+    title_array = title.split(":")
+    
+    if !title_array[1].nil?
+      game_title = title_array[1].strip
+      game_title_array = game_title.split(" ")
+    
+      caps = Array.new
+      game_title_array.each do |e|
+        if e =~ /^[A-Z]/
+          caps.push e
+        else
+          break
+        end
+      end
+    
+      print "STYLE 6: "
+      puts caps.join(" ")
+    end
+  end
   
 end
 
