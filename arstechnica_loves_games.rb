@@ -20,11 +20,13 @@ class Scraper
   attr_accessor :test_mode      # uses cache .yaml file for testing instead of hitting google
   attr_accessor :limit
   attr_accessor :limit_count
+  attr_accessor :parsed_reviews
   
   def initialize
     self.number_of_results = 0
     self.page = 0
     self.reviews = Array.new
+    self.parsed_reviews = Array.new
     self.starting_url = "http://www.google.com/search?hl=en&safe=off&biw=1310&bih=1064"
     self.starting_url << "&q=site%3Aarstechnica.com+arstechnica.com+%22verdict%3A+buy%22&aq=f&start="
 
@@ -154,6 +156,133 @@ class Scraper
   def to_s
     puts "#{self.title} - #{self.link}"
   end
+  
+  def parse(args)
+    if !args[:verbose].nil?
+      verbose = args[:verbose]
+    end
+    
+    # trim out forum posts
+    self.trim(:title, "OpenForum")
+    self.trim(:link, "\/civis\/")
+    self.trim(:link, "\/phpbb\/")
+    self.trim(:link, "\/gadgets/")
+
+    # for some reason getting an author bio link in there
+    self.trim(:link, "\/author\/")
+
+    # unique the whole thing
+    self.reviews.uniq!
+
+    # sort by title
+    self.reviews.sort_by! { |r| r[:title] }
+
+    # unique based on titles, gets rid of mulipage hits
+    # avoid ruby bug #4346 (uniq! after sort_by!)
+    self.reviews = self.reviews.uniq { |e| e[:title] }
+    puts "after trim: #{self.reviews.size}" if verbose
+
+    self.reviews.each do |r|
+      doc = Nokogiri::HTML.parse(Base64::decode64(r[:doc]))
+      puts "-" * 50 if verbose
+      puts r[:link] if verbose
+
+      @titles = Array.new
+      # style 1 (table with heading, bleh)
+      if !doc.css('tbody').css('th')[1].nil?
+        print "STYLE 2: " if verbose
+        title = doc.css('tbody').css('th')[1].text.strip
+        puts title if verbose
+        @titles << title
+      end
+
+      # style 2 (nice game-info div)
+      if !doc.css('.game-info').css('h3')[0].nil?
+        print "STYLE 3: " if verbose
+        title = doc.css('.game-info').css('h3')[0].text.strip
+        puts title if verbose
+        @titles << title
+      end
+
+      # style 3 (nothing really, title detection)
+      # http://arstechnica.com/gaming/news/2007/02/7048.ars
+      # Game Review: WiiPlay (Wii)
+      if doc.css('title').text[/^Game Review:/]
+        print "STYLE 1: " if verbose
+        title = doc.css('title').text.split(":")[1].strip
+        puts title if verbose
+        @titles << title
+      end
+
+      # style 4 (even less, just some <em> text)
+      # http://arstechnica.com/gaming/reviews/2010/04/plain-sighton-the-pc-low-gravity-suicidal-robot-ninjas.ars
+      if doc.xpath('//div[@id="story"]/h2[@class="title"]').css('em').text.size > 0
+        print "STYLE 4: " if verbose
+        title = doc.xpath('//div[@id="story"]/h2[@class="title"]').css('em').text.strip
+        puts title if verbose
+        @titles << title
+      end
+
+      # style 5 (absolutely nothing useful)
+      # Try to detect proper nouns after the word reviews
+      # http://arstechnica.com/gaming/reviews/2010/03/retro-but-approachable-ars-review-mega-man-10.ars
+      if doc.xpath('//meta[@name = "title"]').attr("content").to_s.size > 0
+
+        title = doc.xpath('//meta[@name = "title"]').attr("content").to_s
+        game_title = title[/reviews(.*)/]
+        if !game_title.nil?
+          title_array = game_title.split(" ")
+
+          # get rid of any words that start with lower case, hopefully a title is left
+          title_array.reject! { |e| e[/^[a-z]/] }
+          game_title = title_array.join(" ")
+
+          print "STYLE 5: " if verbose
+          title = game_title
+          puts title if verbose
+          @titles << title
+        end
+      end
+
+      # style 6: grab title from text like Review: Lego Batman is saved by the co-op
+      # http://arstechnica.com/gaming/news/2008/09/lego-batman-saved-by-the-co-op.ars
+      if !doc.xpath('//meta[@property="og:title"]').empty?
+        title = doc.xpath('//meta[@property="og:title"]').attr("content").to_s
+        title_array = title.split(":")
+
+        if !title_array[1].nil?
+          game_title = title_array[1].strip
+          game_title_array = game_title.split(" ")
+
+          caps = Array.new
+          game_title_array.each do |e|
+            if e =~ /^[A-Z]/
+              caps.push e
+            else
+              break
+            end
+          end
+
+          print "STYLE 6: " if verbose
+          title = caps.join(" ")
+          puts title if verbose
+          @titles << title
+        end
+      end
+
+      self.parsed_reviews << { :title => r[:title], :link => r[:link], :date => r[:date], :titles => @titles }
+
+    end
+    
+  end
+  
+  def write_parsed
+    File.open(File.dirname(__FILE__) + "/ars_parsed.yaml", "w") do |file|
+      self.parsed_reviews.each do |review|
+        file.puts YAML::dump(review)
+      end
+    end
+  end
     
 end
 
@@ -166,115 +295,14 @@ end
 s = Scraper.new
 s.scrape
 
+s.parse(:verbose => false)
+s.write_parsed
+
+
 # Pages of results: 
 # Expected size: 
-puts "before trim: #{s.reviews.size}"
-
-# trim out forum posts
-s.trim(:title, "OpenForum")
-s.trim(:link, "\/civis\/")
-s.trim(:link, "\/phpbb\/")
-s.trim(:link, "\/gadgets/")
-
-# for some reason getting an author bio link in there
-s.trim(:link, "\/author\/")
-
-# unique the whole thing
-s.reviews.uniq!
-
-# sort by title
-s.reviews.sort_by! { |r| r[:title] }
-
-# unique based on titles, gets rid of mulipage hits
-# avoid ruby bug #4346 (uniq! after sort_by!)
-s.reviews = s.reviews.uniq { |e| e[:title] }
-puts "after trim: #{s.reviews.size}"
 
 
-review_style_1 = ""
-s.reviews.each do |r|
-  if r[:title][/^Let them/]
-    review_style_1 = r
-  end
-end
-
-s.reviews.each do |r|
-  doc = Nokogiri::HTML.parse(Base64::decode64(r[:doc]))
-  #doc = Nokogiri::HTML::parse r[:doc]
-  puts "-" * 50
-  puts r[:link]
-      
-  # style 1 (table with heading, bleh)
-  if !doc.css('tbody').css('th')[1].nil?
-    print "STYLE 2: "
-    puts doc.css('tbody').css('th')[1].text.strip
-  end
-  
-  # style 2 (nice game-info div)
-  if !doc.css('.game-info').css('h3')[0].nil?
-    print "STYLE 3: "
-    puts doc.css('.game-info').css('h3')[0].text.strip
-  end
-  
-  # style 3 (nothing really, title detection)
-  # http://arstechnica.com/gaming/news/2007/02/7048.ars
-  # Game Review: WiiPlay (Wii)
-  if doc.css('title').text[/^Game Review:/]
-    print "STYLE 1: "
-    puts doc.css('title').text.split(":")[1].strip
-  end
-  
-  # style 4 (even less, just some <em> text)
-  # http://arstechnica.com/gaming/reviews/2010/04/plain-sighton-the-pc-low-gravity-suicidal-robot-ninjas.ars
-  if doc.xpath('//div[@id="story"]/h2[@class="title"]').css('em').text.size > 0
-    print "STYLE 4: "
-    puts doc.xpath('//div[@id="story"]/h2[@class="title"]').css('em').text.strip
-  end
-  
-  # style 5 (absolutely nothing useful)
-  # Try to detect proper nouns after the word reviews
-  # http://arstechnica.com/gaming/reviews/2010/03/retro-but-approachable-ars-review-mega-man-10.ars
-  if doc.xpath('//meta[@name = "title"]').attr("content").to_s.size > 0
-
-    title = doc.xpath('//meta[@name = "title"]').attr("content").to_s
-    game_title = title[/reviews(.*)/]
-    if !game_title.nil?
-      title_array = game_title.split(" ")
-    
-      # get rid of any words that start with lower case, hopefully a title is left
-      title_array.reject! { |e| e[/^[a-z]/] }
-      game_title = title_array.join(" ")
-    
-      print "STYLE 5: "
-      puts game_title
-    end
-  end
-  
-  # style 6: grab title from text like Review: Lego Batman is saved by the co-op
-  # http://arstechnica.com/gaming/news/2008/09/lego-batman-saved-by-the-co-op.ars
-  if !doc.xpath('//meta[@property="og:title"]').empty?
-    title = doc.xpath('//meta[@property="og:title"]').attr("content").to_s
-    title_array = title.split(":")
-    
-    if !title_array[1].nil?
-      game_title = title_array[1].strip
-      game_title_array = game_title.split(" ")
-    
-      caps = Array.new
-      game_title_array.each do |e|
-        if e =~ /^[A-Z]/
-          caps.push e
-        else
-          break
-        end
-      end
-    
-      print "STYLE 6: "
-      puts caps.join(" ")
-    end
-  end
-  
-end
 
 
 # s.reviews.each do |r|
