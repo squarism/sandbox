@@ -162,6 +162,8 @@ class Scraper
       verbose = args[:verbose]
     end
     
+    puts "Before trims: #{self.reviews.size}"
+    
     # trim out forum posts
     self.trim(:title, "OpenForum")
     self.trim(:link, "\/civis\/")
@@ -180,7 +182,7 @@ class Scraper
     # unique based on titles, gets rid of mulipage hits
     # avoid ruby bug #4346 (uniq! after sort_by!)
     self.reviews = self.reviews.uniq { |e| e[:title] }
-    puts "after trim: #{self.reviews.size}" if verbose
+    puts "After trims: #{self.reviews.size}"
 
     self.reviews.each do |r|
       doc = Nokogiri::HTML.parse(Base64::decode64(r[:doc]))
@@ -282,6 +284,7 @@ class Scraper
         file.puts YAML::dump(review)
       end
     end
+    puts "Dumped ars_parsed.yaml"
   end
     
 end
