@@ -17,7 +17,8 @@ class Scraper
   attr_accessor :reviews        # hash of parsed reviews
   attr_accessor :starting_url   # static google results URL
   attr_accessor :page           # google result page iterator number
-  attr_accessor :test_mode      # uses cache .yaml file for testing instead of hitting google
+  attr_accessor :page_size      # number of results on page
+  attr_accessor :test_mode      # uses cache .yml file for testing instead of hitting google
   attr_accessor :limit
   attr_accessor :limit_count
   attr_accessor :parsed_reviews
@@ -25,24 +26,32 @@ class Scraper
   def initialize
     self.number_of_results = 0
     self.page = 0
+    @page_size = 10
     self.reviews = Array.new
     self.parsed_reviews = Array.new
-    self.starting_url = "http://www.google.com/search?hl=en&safe=off&biw=1310&bih=1064"
-    self.starting_url << "&q=site%3Aarstechnica.com+arstechnica.com+%22verdict%3A+buy%22&aq=f&start="
 
     # the below is for test/dev
-    self.test_mode = true
+    self.test_mode = false
     self.limit = -1
     self.limit_count = 0
     
     if !self.test_mode
       begin
         puts "Cleared cache file."
-        File.delete(File.dirname(__FILE__) + "/ars_dump.yaml")
+        File.delete(File.dirname(__FILE__) + "/ars_dump.yml")
       rescue Errno::ENOENT
         puts "Cache file already gone."
       end
     end
+    
+    # this is just concat'd so the URL doesn't go off the page to the right.
+    # self.starting_url = "http://www.google.com/search?hl=en&safe=off&biw=1310&bih=1064"
+    # self.starting_url << "&q=site%3Aarstechnica.com+arstechnica.com+%22verdict%3A+buy%22&aq=f&start="
+    
+    # google search results minus the forums and news summary pages which would cause duplicates
+    @starting_url = "http://www.google.com/search?q=site:arstechnica.com+%22verdict:+buy%22"
+    # @starting_url << "+-%22Gaming+News+posts%22&num=#{@page_size}&hl=en&safe=off&filter=0&start="
+    @starting_url << "&num=#{@page_size}&hl=en&safe=off&filter=0&start="
     
   end
   
@@ -51,7 +60,7 @@ class Scraper
     # test mode speeds up development because you don't have to wait 5 minutes to scrape ars
     if self.test_mode
       # Skip hammering google by loading from a cache file
-      dump_file = File.open(File.dirname(__FILE__) + "/ars_dump.yaml")
+      dump_file = File.open(File.dirname(__FILE__) + "/ars_dump.yml")
       YAML::load_documents(dump_file) do |doc|
         self.reviews << doc
       end
@@ -105,7 +114,7 @@ class Scraper
       puts "===> Sleeping before page: #{self.page}.  ZZzzz..."
       
       # flush to YAML file
-      File.open(File.dirname(__FILE__) + "/ars_dump.yaml", "a") do |file|
+      File.open(File.dirname(__FILE__) + "/ars_dump.yml", "a") do |file|
         puts "review_buffer: #{review_buffer.size} || reviews: #{self.reviews.size} || page_count: #{self.limit_count}"
         review_buffer.each do |review|
           file.puts YAML::dump(review)
@@ -126,7 +135,7 @@ class Scraper
     
     # will get a 503 if you hammer google, so we'll cache to file
     # this won't fire because of the return near top
-    File.open(File.dirname(__FILE__) + "/ars_dump.yaml", "a") do |file|
+    File.open(File.dirname(__FILE__) + "/ars_dump.yml", "a") do |file|
       review_buffer.each do |review|
         file.puts YAML::dump(review)
       end
@@ -135,7 +144,7 @@ class Scraper
   end
   
   def search_url
-    "#{self.starting_url}#{self.page}"
+    "#{@starting_url}#{@page * @page_size}"
   end
   
   # get rid of non-reviews
@@ -228,21 +237,23 @@ class Scraper
       # style 5 (absolutely nothing useful)
       # Try to detect proper nouns after the word reviews
       # http://arstechnica.com/gaming/reviews/2010/03/retro-but-approachable-ars-review-mega-man-10.ars
-      if doc.xpath('//meta[@name = "title"]').attr("content").to_s.size > 0
+      if !doc.xpath('//meta[@name = "title"]').empty?
+        if doc.xpath('//meta[@name = "title"]').attr("content").to_s.size > 0
 
-        title = doc.xpath('//meta[@name = "title"]').attr("content").to_s
-        game_title = title[/reviews(.*)/]
-        if !game_title.nil?
-          title_array = game_title.split(" ")
+          title = doc.xpath('//meta[@name = "title"]').attr("content").to_s
+          game_title = title[/reviews(.*)/]
+          if !game_title.nil?
+            title_array = game_title.split(" ")
 
-          # get rid of any words that start with lower case, hopefully a title is left
-          title_array.reject! { |e| e[/^[a-z]/] }
-          game_title = title_array.join(" ")
+            # get rid of any words that start with lower case, hopefully a title is left
+            title_array.reject! { |e| e[/^[a-z]/] }
+            game_title = title_array.join(" ")
 
-          print "STYLE 5: " if verbose
-          title = game_title
-          puts title if verbose
-          @titles << title
+            print "STYLE 5: " if verbose
+            title = game_title
+            puts title if verbose
+            @titles << title
+          end
         end
       end
 
@@ -279,12 +290,12 @@ class Scraper
   end
   
   def write_parsed
-    File.open(File.dirname(__FILE__) + "/ars_parsed.yaml", "w") do |file|
+    File.open(File.dirname(__FILE__) + "/ars_parsed.yml", "w") do |file|
       self.parsed_reviews.each do |review|
         file.puts YAML::dump(review)
       end
     end
-    puts "Dumped ars_parsed.yaml"
+    puts "Dumped ars_parsed.yml"
   end
     
 end
