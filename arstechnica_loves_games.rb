@@ -4,8 +4,8 @@ require 'typhoeus'
 require 'json'
 require 'nokogiri'
 require 'open-uri'
-require 'eventmachine'
-require 'net/http'
+#require 'eventmachine'
+#require 'net/http'
 require 'uri'
 require 'date'
 require 'yaml'
@@ -32,7 +32,7 @@ class Scraper
 
     # the below is for test/dev
     self.test_mode = false
-    self.limit = -1
+    self.limit = 1
     self.limit_count = 0
     
     if !self.test_mode
@@ -44,7 +44,7 @@ class Scraper
       end
     end
     
-    # this is just concat'd so the URL doesn't go off the page to the right.
+    # this is just concat'd so the code doesn't go off the page to the right.
     # self.starting_url = "http://www.google.com/search?hl=en&safe=off&biw=1310&bih=1064"
     # self.starting_url << "&q=site%3Aarstechnica.com+arstechnica.com+%22verdict%3A+buy%22&aq=f&start="
     
@@ -54,6 +54,50 @@ class Scraper
     @starting_url << "&num=#{@page_size}&hl=en&safe=off&filter=0&start="
     
   end
+  
+  def split_results_page(doc)
+    @doc.css('li.g')
+  end
+  
+  def map_search_chunk(result_html)
+    # find title
+    @title = result_html.css('h3.r a.l').text 
+    # find link
+    @link = result_html.css('h3.r a.l').attr('href').text
+    # find date timestamp of when article was posted according to google
+    @date_str = result_html.css('div.s').text[0..12]
+
+    # remove all periods from date string
+    @date_str.gsub!(/\./, '')
+    begin
+      @date = Date.parse(@date_str)
+    rescue ArgumentError
+      @date = "INVALID on #{@link}"
+      puts $!
+    end
+    
+    {:title => @title, :link => @link, :date => @date}
+  end
+  
+  def get_article(url)
+    @nokogiri_doc = Nokogiri::HTML(open(mapped_result(:link)))
+    
+    # gzip fail
+    # @serialized_doc = @nokogiri_doc.serialize({:encoding => 'utf-8', :save_with => 0})
+    # @compressed_doc = Zlib::Deflate.deflate(@serialized_doc, Zlib::DEFAULT_COMPRESSION)
+    # reviews << { :title => @title, :link => @link, :date => @date, :doc => @compressed_doc }
+    
+    # base64 fail
+    @encoded_doc = Base64::encode64(@nokogiri_doc.to_s)
+    self.reviews << { :title => @title, :link => @link, :date => @date, :doc => @encoded_doc }
+    review_buffer << { :title => @title, :link => @link, :date => @date, :doc => @encoded_doc }
+    
+    #@msg = @nokogiri_doc.to_s.to_msgpack
+    #reviews << { :title => @title, :link => @link, :date => @date, :doc => @msg }
+
+    puts @title
+  end
+    
   
   def scrape
     
@@ -76,36 +120,8 @@ class Scraper
     review_buffer = Array.new
     
     # parse the result
-    @doc.css('li.g').each do |result|
-      @title = result.css('h3.r a.l').text
-      @link = result.css('h3.r a.l').attr('href').text
-      @date_str = result.css('div.s').text[0..12]
-
-      # remove all periods -- can add more to the regex as needed
-      @date_str.gsub!(/\./, '')
-      begin
-        @date = Date.parse(@date_str)
-      rescue ArgumentError
-        @date = "INVALID on #{@link}"
-        puts $!
-      end
-      
-      @nokogiri_doc = Nokogiri::HTML(open(@link))
-      
-      # gzip fail
-      # @serialized_doc = @nokogiri_doc.serialize({:encoding => 'utf-8', :save_with => 0})
-      # @compressed_doc = Zlib::Deflate.deflate(@serialized_doc, Zlib::DEFAULT_COMPRESSION)
-      # reviews << { :title => @title, :link => @link, :date => @date, :doc => @compressed_doc }
-      
-      # base64 fail
-      @encoded_doc = Base64::encode64(@nokogiri_doc.to_s)
-      self.reviews << { :title => @title, :link => @link, :date => @date, :doc => @encoded_doc }
-      review_buffer << { :title => @title, :link => @link, :date => @date, :doc => @encoded_doc }
-      
-      #@msg = @nokogiri_doc.to_s.to_msgpack
-      #reviews << { :title => @title, :link => @link, :date => @date, :doc => @msg }
-
-      puts @title
+    split_results_page(@doc).each do |result|
+      mapped_result = map_search_chunk(result)
     end
     
     # if we run out of google results size will be less than 10 (full page of links)
