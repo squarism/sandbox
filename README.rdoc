@@ -12,5 +12,3 @@ From post: http://squarism.com/2010/12/21/biggest-object_id-value-in-ruby/.  Fin
 === penny_arcade.rb
 An image scraper for the comic site Penny Arcade.  It follows the next/back links in a unknown chain and creates a timestamped filename from the post date and post title.  Saves all files to ~/Desktop which will work in OSX and Linux.  Untested on Windows.  Only saves new files so you could continually run this (probably better to cron daily).  An exercise in following links and dealing with an unknown chain/linked list.  Uses typheous, nokogiri and threads.  Scraper thread pushes work to Saver thread.  Saver thread saves the comic file while Scraper follows the next/back links on the site to enumerate all the comics.  Prints a status bar while it runs and shows how many are in queue.  Has some basic throttling.
 
-=== arstechnica_loves_games.rb
-Takes all Verdict: Buy reviews from arstechnica, compares that to your giantbomb list of games you own and tells you which ars recommended games you missed.  Not finished.
