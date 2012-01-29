@@ -3,7 +3,9 @@
 # I'll buy a shirt from your store.
 # I already give to child's play every year.  :)
 
-# This will create a directory on your Desktop called PA
+# This will create a directory in your Pictures folder called PA
+
+# TODO: Wow, this is broken since they redesigned their site
 
 # threads solved by moving saver thread into scraper, refactoring now
 
