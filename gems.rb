@@ -10,15 +10,16 @@ include ActionView::Helpers
 require 'ruby-prof'
 
 # change to location of rubygems mirror
-GEM_DIR = ARGV[1]
+GEM_DIR = "/opt/rubygems/gems"
 
-# gems = Dir.glob("#{GEM_DIR}/**/*.gem"); 1
+gems = Dir.glob("#{GEM_DIR}/**/*.gem"); 1
 # test comparision problem
-gems = Dir.glob("#{GEM_DIR}/**/springboard*.gem")
+# gems = Dir.glob("#{GEM_DIR}/**/springboard*.gem")
 
 # test with local list without 45GB of gems
 #gems = YAML::load(File.open("/Users/chris/tmp/gems_small.yml")); 1
 
+gems = gems.collect {|g| g.split("/").last}; 
 
 class Version
   include Comparable
@@ -26,7 +27,7 @@ class Version
 
   def initialize(version="")
     @version_string = version
-    @major = 0; @feature_group = 0; @feature = 0; @bugfix = 0
+    @major = "0"; @feature_group = "0"; @feature = "0"; @bugfix = "0"
     
     v = version.split(".")
     # puts v.join("|")
@@ -37,12 +38,17 @@ class Version
     if v[3]; @bugfix = v[3]; end
   end
   
+  # strangely enough .to_i works even for
+  # >> "6-mswin32".to_i
+  # => 6
   def <=>(other)
     return @major <=> other.major if ((@major.to_i <=> other.major.to_i) != 0)
     return @feature_group <=> other.feature_group if ((@feature_group.to_i <=> other.feature_group.to_i) != 0)
     return @feature <=> other.feature if ((@feature.to_i <=> other.feature.to_i) != 0)
     return @bugfix <=> other.bugfix if ((@bugfix.to_i <=> other.bugfix.to_i) != 0)
-    puts "FALLING THROUGH"
+    # we probably have two things equal here
+    return -1
+    puts "FALLING THROUGH in <=>, not good"
   end
 
   def self.sort
@@ -55,50 +61,32 @@ class Version
 end
 
 # temporary benchmarking
-# RubyProf.start
+RubyProf.start
 
-versions_r = Regexp.new(/.*-(.*)\.gem$/)
-
-gem_names = gems.collect{|g| g.split("/").last}; 1
+group_r = Regexp.new(/(.*)-(\d+\.\d+.*)\.gem$/)
+gems_grouped = gems.group_by {|g| g.scan(group_r).flatten[0] }
+# => {"firewool"=>["firewool-0.1.0.gem", "firewool-0.1.1.gem"}], ... }
 
 latest_gems = []
-gem_names.each do |file|
-  # split the gem name and gem version text
-  matches = file.scan(/(.*)-(.*)\.gem$/).flatten
-  gem_family_name = matches.first
-  
-  # find all gems named similarly
-  gem_family_r = Regexp.new(/^#{gem_family_name}-(\d+.*\d+)\.gem$/)
-  gem_family =  gem_names.find_all{|item| item =~ gem_family_r}
 
-  # find all gems named similarly
-  # find_all and Array#select are too slow.  39.647s on 10 files  :(
-  # Use fs glob.  04.289s on 10 files  :)
-  # gem_family = Dir.glob("#{GEM_DIR}/**/#{gem_family_name}-[0-9]*.gem") #.collect{|f| f.split("/").last}
+gems_grouped.each do |g|
+  versions = g[1].collect {|ver| ver.scan(group_r).flatten[1] }
+  # => ["0.1.0", "0.1.1", "0.1.2"]
 
   begin
-    versions = gem_family.collect{|gem| gem.scan(versions_r).flatten.first }
-  rescue Exception => e
-    puts "Version numbering problem in #{file}: #{e}"
+    latest = versions.collect {|v| Version.new(v)}.sort.reverse.first
+    # => "0.1.2"
+  rescue ArgumentError
+    puts g
+    exit
+  rescue NoMethodError
+    puts "MO METHOD"
+    gems_grouped.delete g
+    # puts g
+    # exit
   end
 
-  # bah, I wish I could do some kind of deep sort here instead of doing string tricks
-  begin
-    latest = versions.collect {|v| Version.new(v)}.sort.reverse.first  
-  rescue RuntimeError => e
-    puts "Weird versioning convention in the gem family: #{file}: #{e}"
-  rescue ArgumentError => e
-    puts "Comparison failed: #{file}: #{e}"
-  end
-  
-  
-  # delete older gems
-  # gem_names.delete_if {|item| item =~ /^#{gem_family_name}-.*.gem$/}
-
-  latest_gems << "#{matches.first}-#{latest.to_s}.gem"
-  # if latest_gems.count > 5
-  #   break
-  # end
+  latest_gems << "#{g[0]}-#{latest}.gem"
 end
 
 total = 0
@@ -111,8 +99,9 @@ latest_gems.each do |gem|
   
 end
 
-# result = RubyProf.stop
-# printer = RubyProf::FlatPrinter.new(result)
-# printer.print(STDOUT, {})
+result = RubyProf.stop
+printer = RubyProf::FlatPrinter.new(result)
+printer.print(STDOUT, {})
 
 puts "Total size of newest gems in #{GEM_DIR} is #{number_to_human_size(total)}"
+
