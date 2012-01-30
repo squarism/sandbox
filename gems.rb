@@ -1,8 +1,10 @@
-# this is actually taking 50 hours to run
+# this is actually taking way too long to run
 # unbelievable CPU load for something that should be simple
 # have an algorithm problem or using Arrays when should be using a Hash
 # or something
+# 227305.19 seconds = 63 hours
 
+require 'yaml'
 require 'action_view'
 include ActionView::Helpers
 require 'ruby-prof'
@@ -10,9 +12,13 @@ require 'ruby-prof'
 # change to location of rubygems mirror
 GEM_DIR = ARGV[1]
 
-gems = Dir.glob("#{GEM_DIR}/**/*.gem"); 1
+# gems = Dir.glob("#{GEM_DIR}/**/*.gem"); 1
 # test comparision problem
-# gems = Dir.glob("#{GEM_DIR}/**/springboard*.gem")
+gems = Dir.glob("#{GEM_DIR}/**/springboard*.gem")
+
+# test with local list without 45GB of gems
+#gems = YAML::load(File.open("/Users/chris/tmp/gems_small.yml")); 1
+
 
 class Version
   include Comparable
@@ -20,14 +26,15 @@ class Version
 
   def initialize(version="")
     @version_string = version
+    @major = 0; @feature_group = 0; @feature = 0; @bugfix = 0
     
     v = version.split(".")
     # puts v.join("|")
 
-    if v[0]; @major = v[0]; else; @major = 0; raise "Major number blank."; end
-    if v[1]; @feature_group = v[1]; else; @feature_group = 0; end
-    if v[2]; @feature = v[2]; else; @feature = 0; end
-    if v[3]; @bugfix = v[3]; else; @bugfix = 0; end
+    if v[0]; @major = v[0]; else; raise "Major number blank."; end
+    if v[1]; @feature_group = v[1]; end
+    if v[2]; @feature = v[2]; end
+    if v[3]; @bugfix = v[3]; end
   end
   
   def <=>(other)
@@ -35,6 +42,7 @@ class Version
     return @feature_group <=> other.feature_group if ((@feature_group.to_i <=> other.feature_group.to_i) != 0)
     return @feature <=> other.feature if ((@feature.to_i <=> other.feature.to_i) != 0)
     return @bugfix <=> other.bugfix if ((@bugfix.to_i <=> other.bugfix.to_i) != 0)
+    puts "FALLING THROUGH"
   end
 
   def self.sort
@@ -47,7 +55,9 @@ class Version
 end
 
 # temporary benchmarking
-RubyProf.start
+# RubyProf.start
+
+versions_r = Regexp.new(/.*-(.*)\.gem$/)
 
 gem_names = gems.collect{|g| g.split("/").last}; 1
 
@@ -58,15 +68,16 @@ gem_names.each do |file|
   gem_family_name = matches.first
   
   # find all gems named similarly
-  # gem_family =  gem_names.find_all{|item| item =~ /^#{gem_family_name}-(\d+.*\d+)\.gem$/}
+  gem_family_r = Regexp.new(/^#{gem_family_name}-(\d+.*\d+)\.gem$/)
+  gem_family =  gem_names.find_all{|item| item =~ gem_family_r}
 
   # find all gems named similarly
   # find_all and Array#select are too slow.  39.647s on 10 files  :(
   # Use fs glob.  04.289s on 10 files  :)
-  gem_family = Dir.glob("#{GEM_DIR}/**/#{gem_family_name}-[0-9]*.gem") #.collect{|f| f.split("/").last}
+  # gem_family = Dir.glob("#{GEM_DIR}/**/#{gem_family_name}-[0-9]*.gem") #.collect{|f| f.split("/").last}
 
   begin
-    versions = gem_family.collect{|gem| gem.scan(/.*-(.*)\.gem$/).flatten.first }
+    versions = gem_family.collect{|gem| gem.scan(versions_r).flatten.first }
   rescue Exception => e
     puts "Version numbering problem in #{file}: #{e}"
   end
@@ -100,8 +111,8 @@ latest_gems.each do |gem|
   
 end
 
-result = RubyProf.stop
-printer = RubyProf::FlatPrinter.new(result)
-printer.print(STDOUT, {})
+# result = RubyProf.stop
+# printer = RubyProf::FlatPrinter.new(result)
+# printer.print(STDOUT, {})
 
 puts "Total size of newest gems in #{GEM_DIR} is #{number_to_human_size(total)}"
