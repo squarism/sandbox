@@ -4,21 +4,13 @@
 # or something
 # 227305.19 seconds = 63 hours
 
-require 'yaml'
 require 'action_view'
 include ActionView::Helpers
-require 'ruby-prof'
 
 # change to location of rubygems mirror
 GEM_DIR = "/opt/rubygems/gems"
 
 gems = Dir.glob("#{GEM_DIR}/**/*.gem"); 1
-# test comparision problem
-# gems = Dir.glob("#{GEM_DIR}/**/springboard*.gem")
-
-# test with local list without 45GB of gems
-#gems = YAML::load(File.open("/Users/chris/tmp/gems_small.yml")); 1
-
 gems = gems.collect {|g| g.split("/").last}; 
 
 class Version
@@ -78,12 +70,10 @@ gems_grouped.each do |g|
     # => "0.1.2"
   rescue ArgumentError
     puts g
-    exit
   rescue NoMethodError
-    puts "MO METHOD"
+    # somebody's got some crazy gem naming conventions
+    # for example: chill-1.gem
     gems_grouped.delete g
-    # puts g
-    # exit
   end
 
   latest_gems << "#{g[0]}-#{latest}.gem"
@@ -98,10 +88,6 @@ latest_gems.each do |gem|
   end
   
 end
-
-result = RubyProf.stop
-printer = RubyProf::FlatPrinter.new(result)
-printer.print(STDOUT, {})
 
 puts "Total size of newest gems in #{GEM_DIR} is #{number_to_human_size(total)}"
 
