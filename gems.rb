@@ -1,3 +1,8 @@
+# this is actually taking 50 hours to run
+# unbelievable CPU load for something that should be simple
+# have an algorithm problem or using Arrays when should be using a Hash
+# or something
+
 require 'action_view'
 include ActionView::Helpers
 require 'ruby-prof'
