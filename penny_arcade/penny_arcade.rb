@@ -25,7 +25,7 @@ require './scraper.rb'
 start_page = "http://www.penny-arcade.com/comic/"
 
 # test last comic
-#start_page = "http://www.penny-arcade.com/comic/1998/11/20/"
+# start_page = "http://www.penny-arcade.com/comic/1998/11/25/"
 
 # bomb out bug on 2008
 #start_page = "http://www.penny-arcade.com/comic/2008/7/23/"
@@ -35,6 +35,16 @@ start_page = "http://www.penny-arcade.com/comic/"
 
 # another nil class
 #start_page = "http://www.penny-arcade.com/comic/1998/11/23/"
+
+# another nil class WOW HELLO TESTING
+# TODO: STOP BEING A LAZY !@#$
+# start_page = "http://penny-arcade.com/comic/2008/05/09"
+
+# another nil
+# start_page = "http://penny-arcade.com/comic/2005/12/30"
+
+# now just stopping for no reason
+# start_page = "http://penny-arcade.com/comic/2004/11/29"
 
 # We need to get the latest comic.  On PA, you have to click back and then forward to get the
 # latest comic which is aliased at /comic.

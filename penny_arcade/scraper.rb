@@ -32,9 +32,17 @@ class Scraper
       @doc = Nokogiri::HTML(@response)
       
       @previous_link = find_previous_link(@doc)
+      # handle last comic
+      if @previous_link == 'http://penny-arcade.com/comic/'
+        puts "Hit last comic.  Stopping."
+        self.running = false
+        self.saver.stop
+      end
+
       if @previous_link
         self.queue_url(@previous_link)
       end
+      
       
       # find the post title in the middle of the page
       @post = @doc.css('.post')
@@ -43,8 +51,6 @@ class Scraper
       else
         queue_saver(url, @post, @doc)
       end
-      
-      
     end
 
     self.hydra.queue @request
@@ -78,7 +84,7 @@ class Scraper
     @post_date = [ @year, @month, @day ].join("_")
 
     @image_url = find_comic_img(doc)
-    if @image_url
+    if !@image_url.nil?
       # include information other than the url for naming of the local file
       @save_package = Hash[ :image_url => @image_url,
           :post_image_title => @post_image_title,
@@ -101,13 +107,13 @@ class Scraper
   end
   
   def find_previous_link(doc)
-    if doc.css('.newsNav.top').first.nil?
+    if doc.css('.btnPrev').first.nil?
       puts "Stopping Scraper."
       self.running = false
       nil
       # TODO: might be a problem here, pushes nil to the url queue
     else
-      navigation_map = @doc.css('.newsNav.top').css('li .btnPrev')
+      navigation_map = doc.css('.btnPrev')
       previous = navigation_map.first.attributes['href'].value()
       return previous
     end
@@ -124,7 +130,7 @@ class Scraper
     @request = Typhoeus::Request.new(url)
     @request.on_complete do |response|
       @doc = Nokogiri::HTML(response.body)
-      navigation_map = @doc.css('.newsNav.top').css('li .btnPrev')
+      navigation_map = @doc.css('.newsNav').css('.btnPrev')
     end
     
     self.hydra.queue @request
@@ -133,12 +139,11 @@ class Scraper
     # now get the relative previous link
     previous = navigation_map.first.attributes['href'].value()
     
-    
     # go back a comic
     @request = Typhoeus::Request.new(previous)
     @request.on_complete do |response|
       @doc = Nokogiri::HTML(response.body)
-      navigation_map = @doc.css('.newsNav.top').css('li .btnNext')
+      navigation_map = @doc.css('.newsNav').css('.btnNext')
     end
 
     self.hydra.queue @request
@@ -146,7 +151,6 @@ class Scraper
   
     # now return the next comic which is the unaliased newest comic that has a date in it
     next_link = navigation_map.first.attributes['href'].value()
-    #return "http://www.penny-arcade.com#{next_link}"
   end
   
   def stats
@@ -165,7 +169,6 @@ class Scraper
   def start_saver(semaphore)
     self.saver = Saver.new
     self.saver.semaphore = semaphore
-
     self.saver_thread = Thread.new { self.saver.run }
   end
   
@@ -180,7 +183,7 @@ class Scraper
       self.stats
       self.saver.stats
       # saver thread keeps dying
-      puts "SAVER THREAD: #{self.saver_thread.alive?}"
+      # puts "SAVER THREAD: #{self.saver_thread.alive?}"
 
       # TODO: sometimes the thread dies!
       if !self.saver_thread.alive?
@@ -195,7 +198,7 @@ class Scraper
            It's ok, this happens.  It'll start again soon.
         }
         puts death_string
-        sleep 5
+        sleep 1
         
       end
       
