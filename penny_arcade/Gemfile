@@ -1,0 +1,5 @@
+source :rubygems
+
+gem 'typhoeus', '~> 0.4.2'
+gem 'nokogiri', '~> 1.5.5'
+gem 'eventmachine', '~> 1.0.0.rc.4'
