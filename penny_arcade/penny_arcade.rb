@@ -16,13 +16,14 @@ require 'eventmachine'
 require 'net/http'
 require 'uri'
 require 'open-uri'
+require 'faraday'
 
 require './saver.rb'
 require './scraper.rb'
 
 
 # real start page
-start_page = "http://www.penny-arcade.com/comic/"
+start_page = "http://www.penny-arcade.com/comic"
 
 # test last comic
 # start_page = "http://www.penny-arcade.com/comic/1998/11/25/"

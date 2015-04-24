@@ -121,37 +121,38 @@ class Scraper
     end
   end
 
+  def navigation_map(doc)
+    doc.css('.comicNav')
+  end
+
+  # pad numbers like months and days with a 0 in front for filename purposes
+  # I like files like foo_01_08_1999.txt because they sort correctly.
+  def pad_number(number)
+    return number if number.length == 2
+    sprintf('%02d', number)
+  end
+
   # the newest comic at /comic doesn't have a date in the URL which is the only place to get it
   # so we have to go back one post and go forward
   def newest_comic(url)
-    # define for scope reasons
-    navigation_map = ""
+    conn = Faraday.new url:"http://www.penny-arcade.com"
 
     # get the newest comic
-    @request = Typhoeus::Request.new(url)
-    @request.on_complete do |response|
-      @doc = Nokogiri::HTML(response.body)
-      navigation_map = @doc.css('.comicNav').css('.btnPrev')
-    end
-
-    self.hydra.queue @request
-    self.hydra.run
+    response = conn.get("/comic")
+    doc = Nokogiri::HTML(response.body)
+    navigation_map = navigation_map(doc)
 
     # now get the relative previous link
-    previous = navigation_map.first.attributes['href'].value()
+    previous = navigation_map.css(".btnPrev").attribute("href").value
 
     # go back a comic
-    @request = Typhoeus::Request.new(previous)
-    @request.on_complete do |response|
-      @doc = Nokogiri::HTML(response.body)
-      navigation_map = @doc.css('.comicNav').css('.btnNext')
-    end
-
-    self.hydra.queue @request
-    self.hydra.run
+    response = conn.get(previous)
+    doc = Nokogiri::HTML(response.body)
+    navigation_map = navigation_map(doc)
 
     # now return the next comic which is the unaliased newest comic that has a date in it
-    next_link = navigation_map.first.attributes['href'].value()
+    next_link = navigation_map.first.css('.btnNext').attribute('href').value
+    return next_link
   end
 
   def stats
