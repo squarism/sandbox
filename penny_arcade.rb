@@ -13,10 +13,11 @@ require 'nokogiri'
 require 'eventmachine'
 require 'net/http'
 require 'uri'
+require "faraday"
 
 
 # real start page
-start_page = "http://www.penny-arcade.com/comic/"
+start_page = "http://www.penny-arcade.com/comic"
 
 # test last comic
 #start_page = "http://www.penny-arcade.com/comic/1998/11/20/"
@@ -41,7 +42,7 @@ class Scraper
   attr_accessor :scraped_count  # number of links followed
   attr_accessor :semaphore
   attr_accessor :saver_thread
-      
+
   def initialize
     self.page_size = 10
     self.page_position = 0
@@ -51,44 +52,51 @@ class Scraper
     self.saver = Saver.new
     self.scraped_count = 0
   end
-  
+
   def running?
     self.running
   end
-  
+
   def scrape(url)
     @request = Typhoeus::Request.new(url)
 
     @request.on_complete do |response|
       @response = response.body
       @doc = Nokogiri::HTML(@response)
-      
+
       @previous_link = find_previous_link(@doc)
       if @previous_link
         self.queue_url(@previous_link)
       end
-      
+
       # find the post title in the middle of the page
-      @post = @doc.css('.post')
+      @post = @doc.css('#comicFrame')
       if @doc.css('.content').css('.error').css('h1').text == "No comic/newspost for this issue"
         self.saver.last_saved = "[SKIPPED] No comic for today."
       else
         queue_saver(url, @post, @doc)
       end
-      
-      
+
+
     end
 
     self.hydra.queue @request
     self.hydra.run
     self.scraped_count += 1
   end
-  
+
   def queue_url(url)
     self.url_queue.push(url)
     #puts "Scraper.queue_url(): pushed #{url} to url queue."
   end
-  
+
+  # pad numbers like months and days with a 0 in front for filename purposes
+  # I like files like foo_01_08_1999.txt because they sort correctly.
+  def pad_number(number)
+    return number if number.length == 2
+    sprintf('%02d', number)
+  end
+
   # we have a comic image, parse it and queue it
   def queue_saver(url, post, doc)
     # check for empty post (should mean first comic ever)
@@ -97,16 +105,16 @@ class Scraper
     else
       @post_image = post.css('img')
     end
-        
+
     @post_image_title = @post_image.attr('alt').value
 
     # parse the post date from the url
     @url_a = url.split("/")
-    
+
     # pad month and day with a zero
     @year = @url_a[4]
-    @month = sprintf('%02d', @url_a[5])
-    @day = sprintf('%02d', @url_a[6])
+    @month = pad_number @url_a[5]
+    @day = pad_number @url_a[6]
     @post_date = [ @year, @month, @day ].join("_")
 
     @image_url = find_comic_img(doc)
@@ -120,86 +128,77 @@ class Scraper
         self.saver.queue_url @save_package
       }
     end
-    
+
   end
-  
+
   def find_comic_img(doc)
-    img_tag = doc.css('.post').css('.body').css('img').first
+    img_tag = doc.css('#comicFrame').css('img').first
     if !img_tag.nil?
       img_tag.attributes['src']
     end
   end
-  
+
   def find_previous_link(doc)
-    if doc.css('.actionbar').css('.spritemap').first.nil?
+    if navigation_map(doc).first.nil?
       puts "Stopping Scraper."
       self.running = false
       nil
       # TODO: might be a problem here, pushes nil to the url queue
     else
-      navigation_map = doc.css('.actionbar').css('.spritemap')
-      previous = navigation_map.first.css('.float_left').css('a')[1].attribute('href')
-      return "http://www.penny-arcade.com#{previous}"
+      navigation_map = navigation_map(doc)
+      previous = navigation_map.css(".btnPrev").attribute("href").value
+      return previous
     end
   end
 
+  def navigation_map(doc)
+    doc.css(".comicNav")
+  end
 
   # the newest comic at /comic doesn't have a date in the URL which is the only place to get it
   # so we have to go back one post and go forward
   def newest_comic(url)
-    # define for scope reasons
-    navigation_map = ""
-    
-    # get the newest comic
-    @request = Typhoeus::Request.new(url)
-    @request.on_complete do |response|
-      @doc = Nokogiri::HTML(response.body)
-      navigation_map = @doc.css('.actionbar').css('.spritemap')
-    end
-    
-    self.hydra.queue @request
-    self.hydra.run
-    
-    # now get the relative previous link
-    previous = navigation_map.first.css('.float_left').css('a')[1].attribute('href')
-    
-    
-    # go back a comic
-    @request = Typhoeus::Request.new("http://www.penny-arcade.com#{previous.to_s}")
-    @request.on_complete do |response|
-      @doc = Nokogiri::HTML(response.body)
-      navigation_map = @doc.css('.actionbar').css('.spritemap')
-    end
+    conn = Faraday.new url:"http://www.penny-arcade.com"
 
-    self.hydra.queue @request
-    self.hydra.run
-  
+    # get the newest comic
+    response = conn.get("/comic")
+    doc = Nokogiri::HTML(response.body)
+    navigation_map = navigation_map(doc)
+
+    # now get the relative previous link
+    previous = navigation_map.css(".btnPrev").attribute("href").value
+
+    # go back a comic
+    response = conn.get(previous)
+    doc = Nokogiri::HTML(response.body)
+    navigation_map = navigation_map(doc)
+
     # now return the next comic which is the unaliased newest comic that has a date in it
-    next_link = navigation_map.first.css('.float_left').css('a')[3].attribute('href')
-    return "http://www.penny-arcade.com#{next_link}"
+    next_link = navigation_map.first.css('.btnNext').attribute('href').value
+    return next_link
   end
-  
+
   def stats
     # clear screen
     print %x{clear}
-    
+
     r = self.running ? "Running" : "Stopped"
-    
+
     # scraper stats
     printf("%-2s %2s", "Scraper queue: ", self.url_queue.length)
     print " || Scraper:#{r} || "
     printf("%-3s %3s", "Pages Scraped This Session: ", self.scraped_count)
     print "\n"
   end
-  
+
   def start_saver(semaphore)
     self.saver = Saver.new
     self.saver.semaphore = semaphore
 
     self.saver_thread = Thread.new { self.saver.run }
   end
-  
-  def run    
+
+  def run
     while self.running?
       if url_queue.size != 0 && self.saver.url_queue.size <= 10
         @url = self.url_queue.pop
@@ -215,8 +214,8 @@ class Scraper
       # TODO: sometimes the thread dies!
       if !self.saver_thread.alive?
         self.saver_thread = Thread.new { self.saver.run }
-        death_string = %q{ 
-         _______ _                        _   _____  _          _ _ 
+        death_string = %q{
+         _______ _                        _   _____  _          _ _
         |__   __| |                      | | |  __ \(_)        | | |
            | |  | |__  _ __ ___  __ _  __| | | |  | |_  ___  __| | |
            | |  | '_ \| '__/ _ \/ _` |/ _` | | |  | | |/ _ \/ _` | |
@@ -226,15 +225,15 @@ class Scraper
         }
         puts death_string
         sleep 5
-        
+
       end
-      
+
       # need to sleep a little bit to keep terminal from freaking out
       sleep Random.new.rand(0.01..0.1).round(3)
     end
-    
+
   end
-    
+
 end
 
 
@@ -249,10 +248,10 @@ class Saver
 	attr_accessor :omit_extensions      # extensions to skip
 	attr_accessor :last_saved           # last downloaded file
   attr_accessor :semaphore
-  
+
   def initialize
     self.local_dir = "#{ENV['HOME']}/Pictures/PA"
-    
+
     if !File.exists? local_dir
       require 'fileutils'
       begin
@@ -267,7 +266,7 @@ class Saver
         exit
       end
     end
-    
+
     self.running = true
     self.url_queue = Array.new
     self.downloaded_images = Array.new
@@ -275,25 +274,25 @@ class Saver
     							"pptx", "avi", "wmv", "wma", "mp3", "mp4", "pps", "swf" ]
     self.saved_count = 0
   end
-  
+
   def queue_url(hash)
     self.url_queue.push(hash)
-    #puts "Saver.queue_url(): pushed #{hash[:image_url]} to saver url queue."
+    puts "Saver.queue_url(): pushed #{hash[:image_url]} to saver url queue."
   end
-    
+
   def running?
     self.running
-  end  
-  
+  end
+
   def stop
     self.running = false
     puts "Stopping Saver"
   end
-  
+
   def save_image(url, post_image_title=nil, post_date=nil)
     # Check to see if we have saved this image already.
     # If so, move on.
-    return if downloaded_images.include? url        
+    return if downloaded_images.include? url
 
     # Save this file name down so that we don't download
     # it again in the future.
@@ -302,20 +301,20 @@ class Saver
     # Parse the image name out of the url. We'll use that
     # name to save it down.
     file_name = parse_file_name(url)
-    
+
     # keep the remote extension
     file_extension = parse_extension(url)
-    
+
     if !post_image_title.nil?
       # replace spaces with underscores for comic title
       post_image_title.gsub!(/\s/, '_')
-      
+
       # get rid of characters that make for nasty local filenames
       post_image_title.gsub!(/[\/\:\,\.\#\~\`\@\$\*\\\'\"\!\(\)\?]/, '')
 
       # find one or more underscores and make it just one
       post_image_title.gsub!(/_+/,'_')
-      
+
       # saved image naming convention
       file_name = "#{post_date}_#{post_image_title}#{file_extension}"
     end
@@ -330,12 +329,12 @@ class Saver
       # If the response is not nil, save the contents down to
       # an image.
       if !response.nil?
-        #puts "Saver.save_image(): saving image: #{url}"    
+        #puts "Saver.save_image(): saving image: #{url}"
 
         f = File.open(self.local_dir + "/" + file_name, "wb+")
         f << response.body
         f.close
-                
+
         self.saved_count += 1
         self.last_saved = file_name
       else
@@ -376,11 +375,11 @@ class Saver
     spos = url.rindex("/")
     url[spos + 1, url.length - 1]
   end
-  
+
   def parse_extension(url)
     url[url.rindex("."), url.length - 1]
   end
-  
+
   def should_omit_extension(url)
      # Get the index of the last slash.
      spos = url.rindex("/")
@@ -407,7 +406,7 @@ class Saver
      omit_extensions.include? ext
 
    end
-   
+
    def run
      while self.running?
        # thread was dying until put saver into scraper
@@ -418,25 +417,25 @@ class Saver
            save_image(@save_hash[:image_url].to_s, @save_hash[:post_image_title], @save_hash[:post_date])
          }
        end
-       
+
        # need to sleep a little bit to keep terminal from freaking out
        sleep Random.new.rand(0.02..0.2).round(3)
      end
    end
-   
+
    def stats
      r = self.running ? "Running" : "Stopped"
      printf("%-4s %4s", "Saver queue: ", self.url_queue.length)
      print " || Saver:#{r}   || "
      printf("%-3s %3s", "Saved Images This Session: ", self.saved_count)
      print "\n"
-     
-     
+
+
      #puts "  Saver queue: #{self.url_queue.length} || Saver:#{r}   ||  Saved Images This Session: #{self.saved_count}"
      puts "Saving to: #{self.local_dir}"
      puts "On: #{self.last_saved}"
    end
-  
+
 end
 
 
