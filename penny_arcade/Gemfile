@@ -4,3 +4,7 @@ gem 'typhoeus', '~> 0.4.2'
 gem 'nokogiri', '~> 1.6.6'
 gem 'eventmachine', "~> 1.0.7"
 gem 'faraday', "~> 0.9.0"
+
+group :development do
+  gem 'pry'
+end

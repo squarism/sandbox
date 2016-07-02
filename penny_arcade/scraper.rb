@@ -1,4 +1,8 @@
 # queues up the previous links, one page at a time
+#
+# This class is prone to breakage because we're screen scraping.
+# There are debug statements everywhere waiting to help the future you.
+
 class Scraper
   attr_accessor :page_size      # size of page
   attr_accessor :page_position  # position inside of single page
@@ -33,7 +37,7 @@ class Scraper
 
       @previous_link = find_previous_link(@doc)
       # handle last comic
-      if @previous_link == 'http://penny-arcade.com/comic/'
+      if @previous_link == 'https://penny-arcade.com/comic/'
         puts "Hit last comic.  Stopping."
         self.running = false
         self.saver.stop
@@ -60,7 +64,7 @@ class Scraper
 
   def queue_url(url)
     self.url_queue.push(url)
-    #puts "Scraper.queue_url(): pushed #{url} to url queue."
+    # puts "Scraper.queue_url(): pushed #{url} to url queue."
   end
 
   # we have a comic image, parse it and queue it
@@ -110,15 +114,19 @@ class Scraper
   # walk the comic tree
   def find_previous_link(doc)
     if doc.css('.btnPrev').first.nil?
-      puts "Stopping Scraper."
+      # puts "Stopping Scraper in find_previous_link"
       self.running = false
       nil
       # TODO: might be a problem here, pushes nil to the url queue
     else
       navigation_map = doc.css('.btnPrev')
       previous = navigation_map.first.attributes['href'].value()
-      return previous
+      return sslize(previous)
     end
+  end
+
+  def sslize(url)
+    url.gsub('http:', 'https:')
   end
 
   def navigation_map(doc)
@@ -135,24 +143,24 @@ class Scraper
   # the newest comic at /comic doesn't have a date in the URL which is the only place to get it
   # so we have to go back one post and go forward
   def newest_comic(url)
-    conn = Faraday.new url:"http://www.penny-arcade.com"
+    conn = Faraday.new url:"https://www.penny-arcade.com"
 
     # get the newest comic
     response = conn.get("/comic")
     doc = Nokogiri::HTML(response.body)
-    navigation_map = navigation_map(doc)
+    nav = navigation_map(doc)
 
     # now get the relative previous link
-    previous = navigation_map.css(".btnPrev").attribute("href").value
+    previous = nav.css(".btnPrev").attribute("href").value
 
     # go back a comic
-    response = conn.get(previous)
+    response = conn.get(sslize(previous))
     doc = Nokogiri::HTML(response.body)
-    navigation_map = navigation_map(doc)
+    nav = navigation_map(doc)
 
     # now return the next comic which is the unaliased newest comic that has a date in it
-    next_link = navigation_map.first.css('.btnNext').attribute('href').value
-    return next_link
+    next_link = nav.first.css('.btnNext').attribute('href').value
+    sslize(next_link)
   end
 
   def stats
