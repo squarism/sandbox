@@ -5,7 +5,7 @@ GEM
     eventmachine (1.0.7)
     faraday (0.9.1)
       multipart-post (>= 1.2, < 3)
-    ffi (1.9.8)
+    ffi (1.12.2)
     method_source (0.8.2)
     mime-types (1.25.1)
     mini_portile2 (2.4.0)
